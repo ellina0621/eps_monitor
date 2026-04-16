@@ -206,6 +206,8 @@ def base_style(accent: str, accent_soft: str, accent2: str, accent2_soft: str, b
     .top {{ display: flex; justify-content: space-between; gap: 12px; align-items: end; margin-bottom: 16px; }}
     .subtle {{ color: var(--muted); font-size: 14px; }}
     .controls {{ display: grid; grid-template-columns: minmax(220px, 1.2fr) auto; gap: 12px; }}
+    .jump-bar {{ display: grid; grid-template-columns: minmax(260px, 1fr) auto; gap: 12px; margin-top: 12px; }}
+    .jump-status {{ margin-top: 8px; color: var(--muted); font-size: 13px; min-height: 20px; }}
     input, select {{
       width: 100%; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--line);
       background: rgba(255,255,255,.82); color: var(--ink); font-size: 15px;
@@ -252,11 +254,12 @@ def main_template(dataset: dict) -> str:
 .metric {{ padding: 12px; border-radius: 16px; background: rgba(24,36,44,.04); }}
 .metric span {{ display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }}
 .metric strong {{ font-size: 22px; line-height: 1; font-family: Georgia, "Times New Roman", serif; }}
-.detail {{ padding: 0 18px 18px; }}
-.summary-row {{ background: rgba(31,108,106,.06); font-weight: 700; }}
-.note {{ margin: 10px 2px 0; color: var(--muted); font-size: 13px; }}
+    .detail {{ padding: 0 18px 18px; }}
+    .summary-row {{ background: rgba(31,108,106,.06); font-weight: 700; }}
+    .note {{ margin: 10px 2px 0; color: var(--muted); font-size: 13px; }}
+    .jump-target {{ border-color: rgba(31,108,106,.42); box-shadow: 0 0 0 3px rgba(31,108,106,.10); }}
 @media (max-width: 1100px) {{ .cards {{ grid-template-columns: repeat(2, minmax(0,1fr)); }} }}
-@media (max-width: 760px) {{ .cards, .metrics {{ grid-template-columns: 1fr; }} .name-line {{ flex-direction: column; align-items: start; }} .name-line h3 {{ font-size: 24px; }} }}
+@media (max-width: 760px) {{ .cards, .metrics, .jump-bar {{ grid-template-columns: 1fr; }} .name-line {{ flex-direction: column; align-items: start; }} .name-line h3 {{ font-size: 24px; }} }}
 </style></head>
 <body><div class="shell">
 <section class="hero">
@@ -270,6 +273,9 @@ def main_template(dataset: dict) -> str:
 <section class="panel">
   <div class="top"><div><h2>公司總覽</h2><div class="subtle" id="result-caption"></div></div></div>
   <div class="controls"><input id="search" type="search" placeholder="搜尋公司、代號、產業，例如：2330 / 台積電 / 半導體" /><label class="toggle"><input id="latest-only" type="checkbox" /><span>只看已公布 2026/03</span></label></div>
+  <div class="jump-bar"><input id="jump-search" type="search" list="company-jump-options" placeholder="輸入代碼或公司名稱，直接跳到公司卡片" /><button class="btn secondary" id="jump-button" type="button">跳到公司</button></div>
+  <datalist id="company-jump-options"></datalist>
+  <div class="jump-status" id="jump-status"></div>
   <div class="groups" id="groups"></div>
   <div class="footer-note">資料來源：<a href="./{dataset['meta']['sourceFile']}">{dataset['meta']['sourceFile']}</a>，Excel 更新時間 {dataset['meta']['sourceTimestamp']}，網站生成時間 {dataset['meta']['generatedAt']}。</div>
 </section></div>
@@ -314,6 +320,146 @@ function renderGroups() {{
 }}
 document.getElementById("search").addEventListener("input", renderGroups);
 document.getElementById("latest-only").addEventListener("change", renderGroups);
+renderGroups();
+</script></body></html>"""
+
+
+def main_template_v2(dataset: dict) -> str:
+    data_json = json.dumps(dataset, ensure_ascii=False).replace("</", "<\\/")
+    style = base_style("#bc5c34", "rgba(188,92,52,.14)", "#1f6c6a", "rgba(31,108,106,.14)", "#f4efe5")
+    return f"""<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EPS 知識庫</title><style>{style}
+.groups {{ display: grid; gap: 16px; margin-top: 16px; }}
+.group {{ padding: 20px; border-radius: 24px; border: 1px solid var(--line); background: rgba(255,255,255,.74); }}
+.cards {{ display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }}
+.card {{ border: 1px solid var(--line); border-radius: 20px; background: rgba(255,251,246,.92); overflow: hidden; scroll-margin-top: 24px; }}
+.card summary {{ list-style: none; cursor: pointer; padding: 18px; }}
+.card summary::-webkit-details-marker {{ display: none; }}
+.code {{ display: inline-flex; padding: 5px 10px; border-radius: 999px; background: rgba(24,36,44,.07); color: var(--muted); font-size: 12px; margin-bottom: 10px; }}
+.name-line {{ display: flex; justify-content: space-between; gap: 10px; align-items: start; }}
+.name-line h3 {{ font-size: 28px; line-height: 1.05; }}
+.badge {{ padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }}
+.badge.latest {{ color: var(--accent-2); background: var(--accent-2-soft); }}
+.badge.fallback {{ color: var(--accent); background: var(--accent-soft); }}
+.industry {{ margin-top: 8px; color: var(--muted); font-size: 14px; }}
+.metrics {{ display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; margin-top: 14px; }}
+.metric {{ padding: 12px; border-radius: 16px; background: rgba(24,36,44,.04); }}
+.metric span {{ display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }}
+.metric strong {{ font-size: 22px; line-height: 1; font-family: Georgia, "Times New Roman", serif; }}
+.detail {{ padding: 0 18px 18px; }}
+.summary-row {{ background: rgba(31,108,106,.06); font-weight: 700; }}
+.note {{ margin: 10px 2px 0; color: var(--muted); font-size: 13px; }}
+@media (max-width: 1100px) {{ .cards {{ grid-template-columns: repeat(2, minmax(0,1fr)); }} }}
+@media (max-width: 760px) {{ .cards, .metrics {{ grid-template-columns: 1fr; }} .name-line {{ flex-direction: column; align-items: start; }} .name-line h3 {{ font-size: 24px; }} }}
+</style></head>
+<body><div class="shell">
+<section class="hero">
+  <div class="eyebrow">EPS Knowledge Base</div>
+  <h1>依產業整理的 EPS 知識庫</h1>
+  <p class="lead">主頁依 TSE 產業分組整理，每家公司可展開查看 2025/03 到 2026/03 的單季 EPS。主頁近四季口徑為 2025/06 + 2025/09 + 2025/12 + 2026/03。</p>
+  <div class="stats" id="hero-stats"></div>
+  <div class="actions"><a class="btn primary" href="ranking.html">查看近四季 EPS 排名</a><a class="btn secondary" href="./{dataset['meta']['sourceFile']}">開啟原始 Excel</a></div>
+</section>
+<section class="panel"><div class="top"><div><h2>產業導航</h2><div class="subtle">先搜尋，再跳到指定產業。</div></div></div><div class="pills" id="industry-nav"></div></section>
+<section class="panel">
+  <div class="top"><div><h2>公司總覽</h2><div class="subtle" id="result-caption"></div></div></div>
+  <div class="controls"><input id="search" type="search" placeholder="搜尋公司、代號、產業，例如：2330 / 台積電 / 半導體" /><label class="toggle"><input id="latest-only" type="checkbox" /><span>只看已公布 2026/03</span></label></div>
+  <div class="jump-bar"><input id="jump-search" type="search" list="company-jump-options" placeholder="輸入代碼或公司名稱，直接跳到公司卡片" /><button class="btn secondary" id="jump-button" type="button">跳到公司</button></div>
+  <datalist id="company-jump-options"></datalist>
+  <div class="jump-status" id="jump-status"></div>
+  <div class="groups" id="groups"></div>
+  <div class="footer-note">資料來源：<a href="./{dataset['meta']['sourceFile']}">{dataset['meta']['sourceFile']}</a>，Excel 更新時間 {dataset['meta']['sourceTimestamp']}，網站生成時間 {dataset['meta']['generatedAt']}。</div>
+</section></div>
+<script id="app-data" type="application/json">{data_json}</script>
+<script>
+const appData = JSON.parse(document.getElementById("app-data").textContent);
+const fmt = new Intl.NumberFormat("zh-TW", {{ minimumFractionDigits: 2, maximumFractionDigits: 2 }});
+const searchInput = document.getElementById("search");
+const latestOnlyInput = document.getElementById("latest-only");
+const jumpInput = document.getElementById("jump-search");
+const jumpButton = document.getElementById("jump-button");
+const jumpOptions = document.getElementById("company-jump-options");
+const jumpStatus = document.getElementById("jump-status");
+const groupsRoot = document.getElementById("groups");
+const allCompanies = appData.groups.flatMap((group) => group.companies);
+const formatValue = (value) => value === null || value === undefined ? "—" : fmt.format(value);
+const badgeHtml = (company) => company.hasLatestQuarter
+  ? '<span class="badge latest">已含 2026/03</span>'
+  : company.latestQuarterFallback
+    ? '<span class="badge fallback">排名頁改採 2025/03</span>'
+    : '<span class="badge fallback">近四季資料不足</span>';
+document.getElementById("hero-stats").innerHTML = [
+  ["公司家數", appData.meta.companyCount],
+  ["產業群組", appData.meta.industryCount],
+  ["已公布 2026/03", appData.meta.latestQuarterCompanyCount],
+  ["可進排名頁", appData.meta.rankingEligibleCount]
+].map(([label, value]) => `<div class="stat"><span>${{label}}</span><strong>${{value.toLocaleString("zh-TW")}}</strong></div>`).join("");
+document.getElementById("industry-nav").innerHTML = appData.groups.map((group) => `<a class="pill" href="#group-${{group.name}}">${{group.name}}<span class="subtle">${{group.count}} 家</span></a>`).join("");
+jumpOptions.innerHTML = allCompanies.map((company) => `<option value="${{company.code}} ${{company.name}}"></option><option value="${{company.name}}"></option>`).join("");
+function normalizeText(text) {{
+  return (text || "").toString().trim().toLowerCase();
+}}
+function findCompanyTarget(keyword) {{
+  const query = normalizeText(keyword);
+  if (!query) return null;
+  const valuesFor = (company) => [company.code, company.name, company.label, `${{company.code}} ${{company.name}}`].map(normalizeText);
+  return allCompanies.find((company) => valuesFor(company).some((value) => value === query))
+    || allCompanies.find((company) => valuesFor(company).some((value) => value.startsWith(query)))
+    || allCompanies.find((company) => valuesFor(company).some((value) => value.includes(query)))
+    || null;
+}}
+function buildCard(company) {{
+  const rows = company.detailTable.map((row) => `<tr><td>${{row.label}}</td><td>${{formatValue(row.value)}}</td></tr>`).join("");
+  return `<details class="card" id="company-${{company.code}}"><summary><div class="code">${{company.code}}</div><div class="name-line"><div><h3>${{company.name}}</h3></div>${{badgeHtml(company)}}</div><div class="industry">${{company.industry}}</div><div class="metrics"><div class="metric"><span>主頁近四季</span><strong>${{formatValue(company.strictRecentEps)}}</strong></div><div class="metric"><span>排名頁口徑</span><strong>${{formatValue(company.rankingRecentEps)}}</strong></div></div></summary><div class="detail"><table><thead><tr><th>季度</th><th>單季 EPS</th></tr></thead><tbody>${{rows}}<tr class="summary-row"><td>近四季 EPS（2025/06 + 2025/09 + 2025/12 + 2026/03）</td><td>${{formatValue(company.strictRecentEps)}}</td></tr><tr class="summary-row"><td>排名頁口徑（2026/03 缺值時改採 2025/03）</td><td>${{formatValue(company.rankingRecentEps)}}</td></tr></tbody></table><div class="note">排名頁最後採用季度：${{company.rankingQuarter || "資料不足"}}。</div></div></details>`;
+}}
+function renderGroups() {{
+  const query = searchInput.value.trim().toLowerCase();
+  const latestOnly = latestOnlyInput.checked;
+  let visibleGroups = 0;
+  let visibleCompanies = 0;
+  const html = appData.groups.map((group) => {{
+    const companies = group.companies.filter((company) => {{
+      const haystack = `${{company.code}} ${{company.name}} ${{company.industry}} ${{company.label}}`.toLowerCase();
+      return (!query || haystack.includes(query)) && (!latestOnly || company.hasLatestQuarter);
+    }});
+    if (!companies.length) return "";
+    visibleGroups += 1;
+    visibleCompanies += companies.length;
+    return `<section class="group" id="group-${{group.name}}"><div class="top"><div><h2>${{group.name}}</h2><div class="subtle">${{companies.length}} 家顯示中</div></div></div><div class="cards">${{companies.map(buildCard).join("")}}</div></section>`;
+  }}).join("");
+  document.getElementById("result-caption").textContent = `目前顯示 ${{visibleGroups}} 個產業、${{visibleCompanies}} 家公司。`;
+  groupsRoot.innerHTML = html || '<div class="empty">沒有符合目前搜尋或篩選條件的公司。</div>';
+}}
+function jumpToCompany() {{
+  const targetCompany = findCompanyTarget(jumpInput.value);
+  if (!targetCompany) {{
+    jumpStatus.textContent = "找不到符合的公司，請改用完整代碼或名稱。";
+    return;
+  }}
+  searchInput.value = "";
+  latestOnlyInput.checked = false;
+  renderGroups();
+  const card = document.getElementById(`company-${{targetCompany.code}}`);
+  if (!card) {{
+    jumpStatus.textContent = "公司已找到，但目前頁面沒有成功定位到卡片。";
+    return;
+  }}
+  card.open = true;
+  card.classList.add("jump-target");
+  card.scrollIntoView({{ behavior: "smooth", block: "center" }});
+  window.setTimeout(() => card.classList.remove("jump-target"), 2200);
+  jumpStatus.textContent = `已定位到 ${{targetCompany.code}} ${{targetCompany.name}}。`;
+}}
+searchInput.addEventListener("input", renderGroups);
+latestOnlyInput.addEventListener("change", renderGroups);
+jumpButton.addEventListener("click", jumpToCompany);
+jumpInput.addEventListener("keydown", (event) => {{
+  if (event.key === "Enter") {{
+    event.preventDefault();
+    jumpToCompany();
+  }}
+}});
 renderGroups();
 </script></body></html>"""
 
@@ -393,7 +539,7 @@ def main() -> None:
     if not SOURCE_XLSX.exists():
         raise FileNotFoundError(f"找不到來源檔案：{SOURCE_XLSX}")
     dataset = build_dataset(SOURCE_XLSX)
-    MAIN_OUTPUT.write_text(main_template(dataset), encoding="utf-8")
+    MAIN_OUTPUT.write_text(main_template_v2(dataset), encoding="utf-8")
     RANKING_OUTPUT.write_text(ranking_template(dataset), encoding="utf-8")
     print(f"Generated {MAIN_OUTPUT} and {RANKING_OUTPUT} from {SOURCE_XLSX}.")
 
